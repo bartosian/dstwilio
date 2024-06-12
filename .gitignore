@@ -49,4 +49,4 @@ Godeps/
 *.jfm
 
 # Environment
-.envrc
+.env

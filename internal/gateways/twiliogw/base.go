@@ -11,10 +11,10 @@ import (
 )
 
 type Gateway struct {
-	client          *twilio.RestClient // Twilio REST client used for communication
-	fromPhoneNumber string             // Twilio phone number
-	toPhoneNumber   string             // Client phone number to receive alerts
-	logger          l0g.Logger         // Logger for logging purposes
+	client          *twilio.RestClient
+	fromPhoneNumber string
+	toPhoneNumber   string
+	logger          l0g.Logger
 }
 
 // NewTwilioGateway creates a new instance of the Twilio gateway.

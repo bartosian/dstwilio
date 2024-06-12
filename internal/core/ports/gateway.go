@@ -16,3 +16,8 @@ type (
 		AddHandler(handler MessageHandler) error
 	}
 )
+
+type CherryGateway interface {
+	GetServerStatusByID(id string) (bool, error)
+	RestartServerByID(is string) error
+}

@@ -5,127 +5,93 @@ import (
 	"flag"
 	"os"
 
-	"github.com/joho/godotenv"
-	"golang.org/x/sync/errgroup"
-
 	"github.com/bartosian/notibot/internal/core/controllers"
 	"github.com/bartosian/notibot/internal/core/ports"
+	"github.com/bartosian/notibot/internal/gateways/cherrygw"
 	"github.com/bartosian/notibot/internal/gateways/discordgw"
 	"github.com/bartosian/notibot/internal/gateways/twiliogw"
 	"github.com/bartosian/notibot/pkg/l0g"
-)
-
-const (
-	envFilePath = "../.envrc"
+	"github.com/joho/godotenv"
 )
 
 var (
 	requiredTwilioVars  = []string{"TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_PHONE_NUMBER", "CLIENT_PHONE_NUMBER"}
 	requiredDiscordVars = []string{"DISCORD_BOT_TOKEN", "DISCORD_CHANNEL"}
-	requiredAlertVars   = []string{"ALERT_MANAGER_URL"}
+	requiredCherryVars  = []string{"CHERRY_AUTH_TOKEN", "CHERRY_SERVER_ID"}
 	errEnvVarNotFound   = errors.New("environment variable not found")
 )
+
+type flags struct {
+	envFilePath    string
+	monitorDiscord bool
+}
 
 func main() {
 	logger := l0g.NewLogger()
 	flagSet := parseFlags()
 
-	checkMonitors(flagSet, logger)
-
-	if flagSet.readEnv {
-		loadEnvFile(logger)
+	if flagSet.envFilePath != "" {
+		loadEnvFile(flagSet.envFilePath, logger)
 	}
 
-	checkEnvVars(requiredTwilioVars, logger)
+	if !flagSet.monitorDiscord {
+		logger.Info("all monitors disabled - dismissing", nil)
+		os.Exit(0)
+	}
 
-	// Instantiate gateways
+	checkRequiredEnvVars(requiredDiscordVars, logger)
+	checkRequiredEnvVars(requiredCherryVars, logger)
+	checkRequiredEnvVars(requiredTwilioVars, logger)
+
 	notifierGateway := twiliogw.NewTwilioGateway(logger)
 	discordGateway, err := discordgw.NewDiscordGateway(logger)
-	if err != nil {
-		logger.Error("error creating discord gateway", err, nil)
+	exitIfError(err, logger, "error creating discord gateway")
 
-		os.Exit(1)
-	}
+	cherryGateway, err := cherrygw.NewCherryGateway(logger)
+	exitIfError(err, logger, "error creating cherry gateway")
 
-	// Instantiate controllers
-	notifierController := controllers.NewNotifierController(notifierGateway, discordGateway, logger)
+	notifierController := controllers.NewNotifierController(notifierGateway, discordGateway, cherryGateway, logger)
 
-	monitor(flagSet, notifierController, logger)
+	startMonitoring(notifierController)
 }
 
-type flags struct {
-	readEnv        bool
-	monitorAlerts  bool
-	monitorDiscord bool
-}
-
-// parseFlags parses and returns command line flags.
 func parseFlags() *flags {
-	readEnv := flag.Bool("envrc", false, "read environment variables from .envrc file")
-	monitorAlerts := flag.Bool("alerts", false, "receive alerts from grafana alert manager")
+	envFilePath := flag.String("env-file", "../.envrc", "path to the environment variables file")
 	monitorDiscord := flag.Bool("discord", false, "receive notifications from discord channels")
 
 	flag.Parse()
 
 	return &flags{
-		readEnv:        *readEnv,
-		monitorAlerts:  *monitorAlerts,
+		envFilePath:    *envFilePath,
 		monitorDiscord: *monitorDiscord,
 	}
 }
 
-// checkMonitors checks if both alert and discord monitors are disabled. If they are, it logs an info message and exits the program.
-func checkMonitors(flagSet *flags, logger l0g.Logger) {
-	if !flagSet.monitorAlerts && !flagSet.monitorDiscord {
-		logger.Info("all monitors disabled - dismissing", nil)
-
-		os.Exit(0)
-	}
-}
-
-// loadEnvFile loads environment variables from a .envrc file. If an error occurs, it logs the error and exits the program.
-func loadEnvFile(logger l0g.Logger) {
-	if err := godotenv.Load(envFilePath); err != nil {
-		logger.Error("error loading .envrc file:", err, nil)
-
+func loadEnvFile(filePath string, logger l0g.Logger) {
+	if err := godotenv.Load(filePath); err != nil {
+		logger.Error("error loading .env file:", err, map[string]interface{}{"path": filePath})
 		os.Exit(1)
 	}
 }
 
-// checkEnvVars checks for the presence of each environment variable in the provided slice. If any are missing, it logs an error and exits the program.
-func checkEnvVars(envVars []string, logger l0g.Logger) {
+func checkRequiredEnvVars(envVars []string, logger l0g.Logger) {
 	for _, envVar := range envVars {
 		if os.Getenv(envVar) == "" {
-			logger.Error("error lookup for environment variable", errEnvVarNotFound, envVar)
-
+			logger.Error("missing environment variable", errEnvVarNotFound, map[string]interface{}{"var": envVar})
 			os.Exit(1)
 		}
 	}
 }
 
-// monitor checks which monitors are enabled via the provided flags, and starts those monitors. If an error occurs during monitoring, it logs the error and exits the program.
-func monitor(flagSet *flags, notifierController ports.NotifierController, logger l0g.Logger) {
-	var errGroup errgroup.Group
-
-	if flagSet.monitorDiscord {
-		checkEnvVars(requiredDiscordVars, logger)
-
-		errGroup.Go(func() error {
-			return notifierController.MonitorDiscord()
-		})
+func exitIfError(err error, logger l0g.Logger, message string) {
+	if err != nil {
+		logger.Error(message, err, nil)
+		os.Exit(1)
 	}
+}
 
-	if flagSet.monitorAlerts {
-		checkEnvVars(requiredAlertVars, logger)
-
-		errGroup.Go(func() error {
-			return notifierController.MonitorAlerts()
-		})
-	}
-
-	if err := errGroup.Wait(); err != nil {
-		logger.Error("unexpected error occurred:", err, nil)
-
+func startMonitoring(notifierController ports.NotifierController) {
+	if err := notifierController.MonitorDiscord(); err != nil {
 		os.Exit(1)
 	}
 }

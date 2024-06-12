@@ -10,14 +10,11 @@ import (
 	"github.com/bartosian/notibot/pkg/l0g"
 )
 
-// Gateway represents a Discord gateway that manages the session and logger.
 type Gateway struct {
-	session *discordgo.Session // Discord session used for communication
-	logger  l0g.Logger         // Logger for logging purposes
+	session *discordgo.Session
+	logger  l0g.Logger
 }
 
-// NewDiscordGateway creates a new instance of the Discord gateway.
-// It takes a logger as a parameter and returns a DiscordGateway interface and an error.
 func NewDiscordGateway(logger l0g.Logger) (ports.DiscordGateway, error) {
 	session, err := discordgo.New("Bot " + os.Getenv("DISCORD_BOT_TOKEN"))
 	if err != nil {
