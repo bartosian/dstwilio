@@ -56,7 +56,7 @@ func main() {
 }
 
 func parseFlags() *flags {
-	envFilePath := flag.String("env-file", "../.envrc", "path to the environment variables file")
+	envFilePath := flag.String("env-file", "", "path to the environment variables file")
 	monitorDiscord := flag.Bool("discord", false, "receive notifications from discord channels")
 
 	flag.Parse()
